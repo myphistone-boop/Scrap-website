@@ -104,69 +104,71 @@ scraped_data/
 
 ### Format des fichiers de contenu par page
 
-Chaque page a son propre fichier JSON avec **l'ordre séquentiel exact des éléments**.
-Ce format est parfait pour donner à un LLM (comme Gemini) pour reconstruire la page sans perte d'information.
+Chaque page a son propre fichier JSON **simplifié et épuré** avec uniquement le contenu visible.
+Ce format est parfait pour donner à un LLM (comme Gemini) pour reconstruire la page.
 
 **Caractéristiques:**
 - Images préfixées avec le nom de la page: `index_logo.webp`, `contact_banner.webp`
 - Ordre séquentiel préservé (comme sur la page originale)
-- Métadonnées complètes pour chaque élément
+- **Aucune métadonnée technique** (pas de classes, IDs, types, etc.)
+- **Uniquement le contenu visible** par les visiteurs
+- Boutons et éléments de navigation automatiquement filtrés
 
 ```json
 {
-  "url": "https://example.com/page",
   "page_name": "index",
-  "timestamp": "2025-12-30T...",
   "title": "Titre de la page",
-  "meta_description": "Description...",
-  "content_blocks": [
+  "description": "Description de la page",
+  "content": [
     {
       "type": "heading",
       "level": "h1",
-      "text": "Titre principal",
-      "id": "main-title",
-      "class": ["hero-title"]
+      "text": "Titre principal"
     },
     {
       "type": "paragraph",
-      "text": "Premier paragraphe de contenu...",
-      "class": ["intro"]
+      "text": "Premier paragraphe de contenu que les visiteurs lisent..."
     },
     {
       "type": "image",
-      "src": "https://example.com/logo.png",
-      "local_file": "index_logo.webp",
-      "alt": "Logo de l'entreprise",
-      "title": "Notre logo",
-      "class": ["logo"]
+      "file": "index_logo.webp",
+      "description": "Logo de l'entreprise"
     },
     {
       "type": "list",
-      "list_type": "ul",
-      "items": ["Item 1", "Item 2", "Item 3"],
-      "class": ["features"]
+      "items": [
+        "Service de qualité",
+        "Prix compétitifs",
+        "Support client 24/7"
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h2",
+      "text": "Nos produits"
+    },
+    {
+      "type": "paragraph",
+      "text": "Découvrez notre gamme complète de produits..."
     },
     {
       "type": "table",
-      "data": [
-        ["Header 1", "Header 2"],
-        ["Data 1", "Data 2"]
-      ],
-      "class": ["pricing-table"]
+      "rows": [
+        ["Produit", "Prix", "Disponibilité"],
+        ["Produit A", "99€", "En stock"],
+        ["Produit B", "149€", "En stock"]
+      ]
     }
-  ],
-  "metadata": {
-    "total_headings": 5,
-    "total_paragraphs": 12,
-    "total_images": 8,
-    "total_lists": 3,
-    "total_tables": 1,
-    "total_blocks": 29
-  },
-  "forms": [...],
-  "all_links": [...]
+  ]
 }
 ```
+
+**Éléments automatiquement exclus:**
+- Boutons (Contact, S'inscrire, etc.)
+- Menus de navigation
+- Classes et IDs CSS
+- Cookies banners
+- Éléments techniques
 
 ### Format du fichier scraping_summary.json
 
@@ -240,18 +242,27 @@ python3 scraper.py
 
 ### Reconstruction de page avec Gemini/Claude
 
-Le format JSON séquentiel est parfait pour donner à un LLM et recréer la page:
+Le format JSON est ultra-simplifié pour une reconstruction parfaite avec les LLM:
 
 ```
 Prompt pour Gemini/Claude:
-"Voici le contenu d'une page web au format JSON. Peux-tu créer le code HTML/CSS
-correspondant en respectant exactement l'ordre et la structure des éléments ?
+"Voici le contenu d'une page web au format JSON. Le JSON contient uniquement
+le contenu visible (titres, paragraphes, images, listes) dans l'ordre exact
+d'apparition sur la page.
+
+Peux-tu créer le code HTML/CSS correspondant en respectant cet ordre ?
+Les images sont dans le dossier images/ avec les noms indiqués dans 'file'.
+Crée un design moderne, professionnel et responsive.
 
 [Coller le contenu du fichier index_content.json]
-
-Les images sont disponibles dans le dossier images/ avec les noms indiqués dans
-'local_file'. Crée un design moderne et responsive."
+"
 ```
+
+**Avantages du format épuré:**
+- Pas de bruit technique (classes, IDs, types de boutons)
+- Lecture ultra-rapide par le LLM
+- Génération HTML/CSS plus cohérente et moderne
+- Focus sur le contenu réel, pas la structure technique
 
 ## Cas d'usage
 

@@ -368,6 +368,17 @@ class WebScraper:
             if element.parent.name in ['ul', 'ol', 'table'] and element.name != 'table':
                 continue
 
+            # Ignorer les boutons et éléments de navigation
+            element_classes = element.get('class', [])
+            element_text = element.get_text(strip=True).lower()
+
+            # Liste de mots-clés pour identifier les boutons/navigation
+            skip_keywords = ['button', 'btn', 'nav', 'menu', 'cookie', 'accept', 'decline']
+            if any(keyword in str(element_classes).lower() for keyword in skip_keywords):
+                continue
+            if element.name in ['button', 'nav'] or element.find_parent(['button', 'nav']):
+                continue
+
             # Titres
             if element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
                 text = element.get_text(strip=True)
@@ -375,30 +386,27 @@ class WebScraper:
                     content_blocks.append({
                         'type': 'heading',
                         'level': element.name,
-                        'text': text,
-                        'id': element.get('id', ''),
-                        'class': element.get('class', [])
+                        'text': text
                     })
 
             # Paragraphes
             elif element.name == 'p':
                 text = element.get_text(strip=True)
-                if text:
+                if text and len(text) > 10:  # Ignorer les très courts paragraphes (souvent des labels)
                     content_blocks.append({
                         'type': 'paragraph',
-                        'text': text,
-                        'class': element.get('class', [])
+                        'text': text
                     })
 
             # Listes
             elif element.name in ['ul', 'ol']:
                 items = [li.get_text(strip=True) for li in element.find_all('li', recursive=False)]
+                # Filtrer les items vides ou trop courts
+                items = [item for item in items if item and len(item) > 3]
                 if items:
                     content_blocks.append({
                         'type': 'list',
-                        'list_type': element.name,
-                        'items': items,
-                        'class': element.get('class', [])
+                        'items': items
                     })
 
             # Images
@@ -408,41 +416,49 @@ class WebScraper:
                     abs_url = self.get_absolute_url(src)
                     # Chercher l'image téléchargée correspondante
                     img_info = image_map.get(abs_url, {})
-                    content_blocks.append({
-                        'type': 'image',
-                        'src': abs_url,
-                        'local_file': img_info.get('filename', ''),
-                        'alt': element.get('alt', ''),
-                        'title': element.get('title', ''),
-                        'class': element.get('class', [])
-                    })
+                    alt_text = element.get('alt', '')
+                    title_text = element.get('title', '')
+
+                    # Ne garder l'image que si elle a une description ou est importante
+                    if img_info.get('filename'):
+                        image_block = {
+                            'type': 'image',
+                            'file': img_info.get('filename', ''),
+                            'description': alt_text or title_text or ''
+                        }
+                        content_blocks.append(image_block)
 
             # Tableaux
             elif element.name == 'table':
                 table_data = []
                 for row in element.find_all('tr'):
                     row_data = [cell.get_text(strip=True) for cell in row.find_all(['td', 'th'])]
+                    row_data = [cell for cell in row_data if cell]  # Enlever les cellules vides
                     if row_data:
                         table_data.append(row_data)
                 if table_data:
                     content_blocks.append({
                         'type': 'table',
-                        'data': table_data,
-                        'class': element.get('class', [])
+                        'rows': table_data
                     })
 
-            # Divs avec classe spécifique (souvent utilisés pour du contenu)
+            # Divs avec contenu textuel important
             elif element.name == 'div':
                 # Seulement si le div contient directement du texte (pas d'autres éléments structurels)
                 if element.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol']) is None:
                     text = element.get_text(strip=True)
-                    if text and len(text) > 20:  # Éviter les petits divs de style
-                        content_blocks.append({
-                            'type': 'div',
-                            'text': text,
-                            'class': element.get('class', []),
-                            'id': element.get('id', '')
-                        })
+                    # Ignorer les textes courts et les textes de boutons/navigation
+                    if text and len(text) > 30:
+                        skip_this = False
+                        for keyword in skip_keywords:
+                            if keyword in text.lower():
+                                skip_this = True
+                                break
+                        if not skip_this:
+                            content_blocks.append({
+                                'type': 'text',
+                                'text': text
+                            })
 
         return content_blocks
 
@@ -485,22 +501,10 @@ class WebScraper:
             content_path = self.output_dir / 'content' / content_filename
 
             page_content_structure = {
-                'url': url,
                 'page_name': page_name,
-                'timestamp': datetime.now().isoformat(),
                 'title': text_content['title'],
-                'meta_description': text_content['meta_description'],
-                'content_blocks': sequential_content,
-                'metadata': {
-                    'total_headings': len([b for b in sequential_content if b['type'] == 'heading']),
-                    'total_paragraphs': len([b for b in sequential_content if b['type'] == 'paragraph']),
-                    'total_images': len([b for b in sequential_content if b['type'] == 'image']),
-                    'total_lists': len([b for b in sequential_content if b['type'] == 'list']),
-                    'total_tables': len([b for b in sequential_content if b['type'] == 'table']),
-                    'total_blocks': len(sequential_content)
-                },
-                'forms': text_content['forms'],
-                'all_links': text_content['links']
+                'description': text_content['meta_description'],
+                'content': sequential_content
             }
 
             # Sauvegarder le contenu structuré
