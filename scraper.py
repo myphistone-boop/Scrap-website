@@ -299,6 +299,7 @@ class WebScraper:
         try:
             response = self.session.get(url, timeout=30)
             response.raise_for_status()
+            print(f"✓ Page téléchargée avec succès (taille: {len(response.text)} caractères)")
 
             self.visited_urls.add(url)
 
@@ -327,6 +328,8 @@ class WebScraper:
             return page_data
 
         except Exception as e:
+            error_msg = f"✗ Erreur lors du scraping: {type(e).__name__}: {str(e)}"
+            print(error_msg)
             return {
                 'status': 'error',
                 'url': url,
@@ -395,8 +398,17 @@ class WebScraper:
         with open(content_path, 'w', encoding='utf-8') as f:
             json.dump(text_only, f, ensure_ascii=False, indent=2)
 
+        # Compter les succès et erreurs
+        success_count = sum(1 for p in pages_data if p['status'] == 'success')
+        error_count = sum(1 for p in pages_data if p['status'] == 'error')
+
         print(f"\n✓ Scraping terminé!")
-        print(f"  Pages scrapées: {summary['total_pages']}")
+        print(f"  Pages réussies: {success_count}")
+        if error_count > 0:
+            print(f"  Pages en erreur: {error_count}")
+            for p in pages_data:
+                if p['status'] == 'error':
+                    print(f"    - {p['url']}: {p['error']}")
         print(f"  Images téléchargées: {summary['total_images']}")
         print(f"  Vidéos téléchargées: {summary['total_videos']}")
         print(f"  Audio téléchargés: {summary['total_audio']}")
