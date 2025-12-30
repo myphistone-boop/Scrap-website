@@ -20,13 +20,14 @@ from typing import Dict, List, Set
 class WebScraper:
     """Classe principale pour scraper un site web"""
 
-    def __init__(self, url: str, output_dir: str = "scraped_data"):
+    def __init__(self, url: str, output_dir: str = "scraped_data", verify_ssl: bool = True):
         self.base_url = url
         self.output_dir = Path(output_dir)
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
+        self.verify_ssl = verify_ssl
         self.visited_urls: Set[str] = set()
         self.downloaded_media: Set[str] = set()
 
@@ -69,7 +70,7 @@ class WebScraper:
             return {'status': 'already_downloaded', 'url': url}
 
         try:
-            response = self.session.get(url, timeout=30, stream=True)
+            response = self.session.get(url, timeout=30, stream=True, verify=self.verify_ssl)
             response.raise_for_status()
 
             # Déterminer le nom de fichier
@@ -297,7 +298,7 @@ class WebScraper:
         print(f"Scraping: {url}")
 
         try:
-            response = self.session.get(url, timeout=30)
+            response = self.session.get(url, timeout=30, verify=self.verify_ssl)
             response.raise_for_status()
             print(f"✓ Page téléchargée avec succès (taille: {len(response.text)} caractères)")
 
@@ -452,10 +453,20 @@ def main():
     if not output:
         output = "scraped_data"
 
+    # Demander si on veut vérifier le certificat SSL
+    ssl_verify_input = input("\nVérifier le certificat SSL? (o/n) [o]: ").strip().lower()
+    verify_ssl = ssl_verify_input not in ['n', 'non', 'no']
+
+    if not verify_ssl:
+        print("⚠️  Attention: La vérification SSL est désactivée (utile pour les certificats auto-signés)")
+        # Désactiver les avertissements SSL
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
     print()
 
     # Créer le scraper et lancer
-    scraper = WebScraper(url, output)
+    scraper = WebScraper(url, output, verify_ssl=verify_ssl)
     scraper.scrape(include_links=include_links, max_pages=max_pages)
 
 

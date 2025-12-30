@@ -51,6 +51,7 @@ Le programme vous demandera:
 2. Si vous voulez scraper les pages liées (follow links)
 3. Le nombre maximum de pages à scraper (si applicable)
 4. Le dossier de sortie
+5. Si vous voulez vérifier le certificat SSL (répondez 'n' pour les sites avec certificats auto-signés)
 
 ### Mode programmé
 
@@ -66,6 +67,10 @@ results = scraper.scrape(include_links=False, max_pages=1)
 # Scraper plusieurs pages (suit les liens internes)
 scraper = WebScraper('https://example.com', output_dir='mon_dossier')
 results = scraper.scrape(include_links=True, max_pages=50)
+
+# Scraper un site avec certificat auto-signé (désactiver la vérification SSL)
+scraper = WebScraper('https://example.com', output_dir='mon_dossier', verify_ssl=False)
+results = scraper.scrape(include_links=False, max_pages=1)
 ```
 
 ## Structure des données de sortie
