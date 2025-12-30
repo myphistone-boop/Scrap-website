@@ -15,12 +15,14 @@ from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
 from typing import Dict, List, Set
+from PIL import Image
+from io import BytesIO
 
 
 class WebScraper:
     """Classe principale pour scraper un site web"""
 
-    def __init__(self, url: str, output_dir: str = "scraped_data", verify_ssl: bool = True):
+    def __init__(self, url: str, output_dir: str = "scraped_data", verify_ssl: bool = True, convert_to_webp: bool = True):
         self.base_url = url
         self.output_dir = Path(output_dir)
         self.session = requests.Session()
@@ -28,6 +30,7 @@ class WebScraper:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
         self.verify_ssl = verify_ssl
+        self.convert_to_webp = convert_to_webp
         self.visited_urls: Set[str] = set()
         self.downloaded_media: Set[str] = set()
 
@@ -100,9 +103,48 @@ class WebScraper:
                 counter += 1
 
             # Sauvegarder le fichier
-            with open(final_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
+            file_content = BytesIO()
+            for chunk in response.iter_content(chunk_size=8192):
+                file_content.write(chunk)
+            file_content.seek(0)
+
+            # Convertir les images en WebP si demandé
+            if folder == 'images' and self.convert_to_webp:
+                try:
+                    # Ouvrir l'image avec PIL
+                    img = Image.open(file_content)
+
+                    # Convertir en RGB si nécessaire (WebP ne supporte pas tous les modes)
+                    if img.mode in ('RGBA', 'LA', 'P'):
+                        # Garder la transparence pour RGBA
+                        pass
+                    elif img.mode != 'RGB':
+                        img = img.convert('RGB')
+
+                    # Changer l'extension en .webp
+                    base_name, _ = os.path.splitext(filename)
+                    filename = base_name + '.webp'
+                    final_path = self.output_dir / folder / filename
+
+                    # Éviter les doublons avec la nouvelle extension
+                    counter = 1
+                    while final_path.exists():
+                        filename = f"{base_name}_{counter}.webp"
+                        final_path = self.output_dir / folder / filename
+                        counter += 1
+
+                    # Sauvegarder en WebP avec bonne qualité
+                    img.save(final_path, 'WEBP', quality=85, method=6)
+                except Exception as e:
+                    # Si la conversion échoue, sauvegarder le fichier original
+                    print(f"  ⚠️  Impossible de convertir en WebP: {e}, sauvegarde en format original")
+                    file_content.seek(0)
+                    with open(final_path, 'wb') as f:
+                        f.write(file_content.read())
+            else:
+                # Sauvegarder directement pour les non-images ou si conversion désactivée
+                with open(final_path, 'wb') as f:
+                    f.write(file_content.read())
 
             self.downloaded_media.add(url)
 
@@ -131,7 +173,7 @@ class WebScraper:
 
         # Extraire les images
         for img in soup.find_all('img'):
-            src = img.get('src') or img.get('data-src')
+            src = img.get('src') or img.get('data-src') or img.get('data-lazy-src')
             if src:
                 abs_url = self.get_absolute_url(src, page_url)
                 if self.is_valid_url(abs_url):
@@ -163,7 +205,7 @@ class WebScraper:
         # Extraire l'audio
         for audio in soup.find_all('audio'):
             # Source directe
-            src = audio.get('src')
+            src = audio.get('src') or audio.get('data-src') or audio.get('data-lazy-src')
             if src:
                 abs_url = self.get_absolute_url(src, page_url)
                 if self.is_valid_url(abs_url):
@@ -172,13 +214,24 @@ class WebScraper:
 
             # Sources multiples
             for source in audio.find_all('source'):
-                src = source.get('src')
+                src = source.get('src') or source.get('data-src')
                 if src:
                     abs_url = self.get_absolute_url(src, page_url)
                     if self.is_valid_url(abs_url):
                         result = self.download_file(abs_url, 'audio')
                         result['type'] = source.get('type', '')
                         media['audio'].append(result)
+
+        # Chercher des liens directs vers des fichiers audio
+        audio_extensions = ['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.wma']
+        for link in soup.find_all('a', href=True):
+            href = link['href']
+            if any(href.lower().endswith(ext) for ext in audio_extensions):
+                abs_url = self.get_absolute_url(href, page_url)
+                if self.is_valid_url(abs_url):
+                    result = self.download_file(abs_url, 'audio')
+                    result['link_text'] = link.get_text(strip=True)
+                    media['audio'].append(result)
 
         return media
 
@@ -317,11 +370,71 @@ class WebScraper:
             text_content = self.extract_text_content(soup)
             media_content = self.extract_media(soup, url)
 
+            # Sauvegarder le contenu structuré de cette page dans un fichier JSON séparé
+            content_filename = self.sanitize_filename(f"{urlparse(url).path.replace('/', '_') or 'index'}_content.json")
+            content_path = self.output_dir / 'content' / content_filename
+
+            page_content_structure = {
+                'url': url,
+                'timestamp': datetime.now().isoformat(),
+                'title': text_content['title'],
+                'meta_description': text_content['meta_description'],
+                'sections': []
+            }
+
+            # Structurer le contenu en sections
+            current_section = None
+            for level in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+                for heading in text_content['headings'][level]:
+                    section = {
+                        'heading_level': level,
+                        'heading': heading['text'],
+                        'heading_id': heading['id'],
+                        'heading_class': heading['class'],
+                        'paragraphs': [],
+                        'lists': [],
+                        'images': [],
+                        'links': []
+                    }
+                    page_content_structure['sections'].append(section)
+
+            # Ajouter les paragraphes, listes, etc. à la structure
+            if not page_content_structure['sections']:
+                # Si pas de sections avec titres, créer une section par défaut
+                page_content_structure['sections'].append({
+                    'heading_level': 'none',
+                    'heading': 'Contenu principal',
+                    'heading_id': '',
+                    'heading_class': [],
+                    'paragraphs': text_content['paragraphs'],
+                    'lists': text_content['lists'],
+                    'images': [{'url': img.get('url', ''), 'alt': img.get('alt', ''), 'title': img.get('title', '')}
+                               for img in media_content['images'] if img.get('status') == 'success'],
+                    'links': text_content['links']
+                })
+            else:
+                # Distribuer le contenu dans les sections (simplification: tout dans la première section)
+                if page_content_structure['sections']:
+                    page_content_structure['sections'][0]['paragraphs'] = text_content['paragraphs']
+                    page_content_structure['sections'][0]['lists'] = text_content['lists']
+                    page_content_structure['sections'][0]['images'] = [{'url': img.get('url', ''), 'alt': img.get('alt', ''), 'title': img.get('title', '')}
+                                                                        for img in media_content['images'] if img.get('status') == 'success']
+                    page_content_structure['sections'][0]['links'] = text_content['links']
+
+            # Ajouter les tableaux et formulaires globalement
+            page_content_structure['tables'] = text_content['tables']
+            page_content_structure['forms'] = text_content['forms']
+
+            # Sauvegarder le contenu structuré
+            with open(content_path, 'w', encoding='utf-8') as f:
+                json.dump(page_content_structure, f, ensure_ascii=False, indent=2)
+
             page_data = {
                 'status': 'success',
                 'url': url,
                 'timestamp': datetime.now().isoformat(),
                 'html_file': str(html_path),
+                'content_file': str(content_path),
                 'content': text_content,
                 'media': media_content
             }
@@ -453,6 +566,10 @@ def main():
     if not output:
         output = "scraped_data"
 
+    # Demander si on veut convertir les images en WebP
+    webp_input = input("\nConvertir les images en format WebP (format web optimisé)? (o/n) [o]: ").strip().lower()
+    convert_to_webp = webp_input not in ['n', 'non', 'no']
+
     # Demander si on veut vérifier le certificat SSL
     ssl_verify_input = input("\nVérifier le certificat SSL? (o/n) [o]: ").strip().lower()
     verify_ssl = ssl_verify_input not in ['n', 'non', 'no']
@@ -466,7 +583,7 @@ def main():
     print()
 
     # Créer le scraper et lancer
-    scraper = WebScraper(url, output, verify_ssl=verify_ssl)
+    scraper = WebScraper(url, output, verify_ssl=verify_ssl, convert_to_webp=convert_to_webp)
     scraper.scrape(include_links=include_links, max_pages=max_pages)
 
 

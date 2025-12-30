@@ -16,14 +16,18 @@ Ce programme permet de scraper un site web pour récupérer tout son contenu vis
 
 - **Téléchargement de médias**:
   - Images (incluant les attributs alt et title)
+    - **Conversion automatique en format WebP** (format web optimisé, fichiers plus légers)
+    - Support des attributs data-src et data-lazy-src
   - Vidéos (tous les formats)
   - Audio (tous les formats)
+    - Détection améliorée des balises audio et sources
+    - Recherche de liens directs vers fichiers audio (.mp3, .wav, .ogg, etc.)
 
 - **Organisation des données**:
   - Médias organisés par type (images, vidéos, audio)
   - HTML brut sauvegardé
-  - Résumé JSON complet avec toutes les données structurées
-  - Fichier JSON séparé pour le contenu textuel uniquement
+  - **Fichier JSON structuré par page** avec sections, paragraphes et hiérarchie
+  - Résumé JSON complet avec toutes les données
 
 ## Installation
 
@@ -51,7 +55,8 @@ Le programme vous demandera:
 2. Si vous voulez scraper les pages liées (follow links)
 3. Le nombre maximum de pages à scraper (si applicable)
 4. Le dossier de sortie
-5. Si vous voulez vérifier le certificat SSL (répondez 'n' pour les sites avec certificats auto-signés)
+5. Si vous voulez convertir les images en WebP (recommandé: 'o' pour des fichiers plus légers)
+6. Si vous voulez vérifier le certificat SSL (répondez 'n' pour les sites avec certificats auto-signés)
 
 ### Mode programmé
 
@@ -60,8 +65,8 @@ Vous pouvez aussi utiliser le scraper dans votre propre code Python:
 ```python
 from scraper import WebScraper
 
-# Scraper une seule page
-scraper = WebScraper('https://example.com', output_dir='mon_dossier')
+# Scraper une seule page avec conversion WebP
+scraper = WebScraper('https://example.com', output_dir='mon_dossier', convert_to_webp=True)
 results = scraper.scrape(include_links=False, max_pages=1)
 
 # Scraper plusieurs pages (suit les liens internes)
@@ -71,6 +76,10 @@ results = scraper.scrape(include_links=True, max_pages=50)
 # Scraper un site avec certificat auto-signé (désactiver la vérification SSL)
 scraper = WebScraper('https://example.com', output_dir='mon_dossier', verify_ssl=False)
 results = scraper.scrape(include_links=False, max_pages=1)
+
+# Scraper sans conversion WebP (garder les formats originaux)
+scraper = WebScraper('https://example.com', output_dir='mon_dossier', convert_to_webp=False)
+results = scraper.scrape(include_links=False, max_pages=1)
 ```
 
 ## Structure des données de sortie
@@ -79,13 +88,50 @@ Après le scraping, vous trouverez la structure suivante:
 
 ```
 scraped_data/
-├── images/              # Toutes les images téléchargées
+├── images/              # Toutes les images téléchargées (en WebP par défaut)
 ├── videos/              # Toutes les vidéos téléchargées
 ├── audio/               # Tous les fichiers audio téléchargés
 ├── raw_html/            # Pages HTML brutes
 ├── content/             # Contenu extrait
-│   └── all_text_content.json    # Tout le contenu textuel
+│   ├── index_content.json       # Contenu structuré de la page d'accueil
+│   ├── page1_content.json       # Contenu structuré de page1
+│   └── ...                       # Un fichier JSON par page scrapée
 └── scraping_summary.json        # Résumé complet avec tout
+```
+
+### Format des fichiers de contenu par page
+
+Chaque page a son propre fichier JSON structuré avec sections et hiérarchie:
+
+```json
+{
+  "url": "https://example.com/page",
+  "timestamp": "2025-12-30T...",
+  "title": "Titre de la page",
+  "meta_description": "Description...",
+  "sections": [
+    {
+      "heading_level": "h1",
+      "heading": "Titre principal",
+      "heading_id": "main-title",
+      "heading_class": ["title"],
+      "paragraphs": [
+        {"text": "Contenu du paragraphe...", "class": []}
+      ],
+      "lists": [
+        {"type": "ul", "items": ["Item 1", "Item 2"], "class": []}
+      ],
+      "images": [
+        {"url": "https://...", "alt": "Description", "title": "Titre"}
+      ],
+      "links": [
+        {"text": "Lien", "href": "https://...", "title": ""}
+      ]
+    }
+  ],
+  "tables": [...],
+  "forms": [...]
+}
 ```
 
 ### Format du fichier scraping_summary.json
