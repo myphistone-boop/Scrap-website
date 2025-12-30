@@ -67,7 +67,7 @@ class WebScraper:
             filename = name[:200-len(ext)] + ext
         return filename
 
-    def download_file(self, url: str, folder: str, custom_name: str = None) -> Dict:
+    def download_file(self, url: str, folder: str, custom_name: str = None, page_prefix: str = None) -> Dict:
         """Télécharge un fichier média"""
         if url in self.downloaded_media:
             return {'status': 'already_downloaded', 'url': url}
@@ -83,6 +83,10 @@ class WebScraper:
                 # Extraire le nom depuis l'URL
                 parsed = urlparse(url)
                 filename = os.path.basename(parsed.path)
+
+                # Ajouter le préfixe de la page si fourni
+                if page_prefix:
+                    filename = f"{page_prefix}_{filename}"
 
                 # Si pas d'extension, essayer de la déterminer depuis le Content-Type
                 if not os.path.splitext(filename)[1]:
@@ -163,7 +167,7 @@ class WebScraper:
                 'error': str(e)
             }
 
-    def extract_media(self, soup: BeautifulSoup, page_url: str) -> Dict[str, List]:
+    def extract_media(self, soup: BeautifulSoup, page_url: str, page_prefix: str = None) -> Dict[str, List]:
         """Extrait tous les médias d'une page"""
         media = {
             'images': [],
@@ -177,7 +181,7 @@ class WebScraper:
             if src:
                 abs_url = self.get_absolute_url(src, page_url)
                 if self.is_valid_url(abs_url):
-                    result = self.download_file(abs_url, 'images')
+                    result = self.download_file(abs_url, 'images', page_prefix=page_prefix)
                     result['alt'] = img.get('alt', '')
                     result['title'] = img.get('title', '')
                     media['images'].append(result)
@@ -343,6 +347,105 @@ class WebScraper:
 
         return content
 
+    def extract_sequential_content(self, soup: BeautifulSoup, media_dict: Dict) -> List[Dict]:
+        """
+        Extrait le contenu dans l'ordre séquentiel d'apparition sur la page
+        Parfait pour reconstruire la page avec un LLM comme Gemini
+        """
+        content_blocks = []
+
+        # Trouver le conteneur principal (body ou main)
+        main_content = soup.find('main') or soup.find('body')
+        if not main_content:
+            return content_blocks
+
+        # Créer un mapping des images par URL pour référence rapide
+        image_map = {img.get('url', ''): img for img in media_dict['images'] if img.get('status') == 'success'}
+
+        # Parcourir tous les éléments dans l'ordre
+        for element in main_content.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'img', 'table', 'div'], recursive=True):
+            # Éviter les éléments imbriqués déjà traités
+            if element.parent.name in ['ul', 'ol', 'table'] and element.name != 'table':
+                continue
+
+            # Titres
+            if element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+                text = element.get_text(strip=True)
+                if text:
+                    content_blocks.append({
+                        'type': 'heading',
+                        'level': element.name,
+                        'text': text,
+                        'id': element.get('id', ''),
+                        'class': element.get('class', [])
+                    })
+
+            # Paragraphes
+            elif element.name == 'p':
+                text = element.get_text(strip=True)
+                if text:
+                    content_blocks.append({
+                        'type': 'paragraph',
+                        'text': text,
+                        'class': element.get('class', [])
+                    })
+
+            # Listes
+            elif element.name in ['ul', 'ol']:
+                items = [li.get_text(strip=True) for li in element.find_all('li', recursive=False)]
+                if items:
+                    content_blocks.append({
+                        'type': 'list',
+                        'list_type': element.name,
+                        'items': items,
+                        'class': element.get('class', [])
+                    })
+
+            # Images
+            elif element.name == 'img':
+                src = element.get('src') or element.get('data-src') or element.get('data-lazy-src')
+                if src:
+                    abs_url = self.get_absolute_url(src)
+                    # Chercher l'image téléchargée correspondante
+                    img_info = image_map.get(abs_url, {})
+                    content_blocks.append({
+                        'type': 'image',
+                        'src': abs_url,
+                        'local_file': img_info.get('filename', ''),
+                        'alt': element.get('alt', ''),
+                        'title': element.get('title', ''),
+                        'class': element.get('class', [])
+                    })
+
+            # Tableaux
+            elif element.name == 'table':
+                table_data = []
+                for row in element.find_all('tr'):
+                    row_data = [cell.get_text(strip=True) for cell in row.find_all(['td', 'th'])]
+                    if row_data:
+                        table_data.append(row_data)
+                if table_data:
+                    content_blocks.append({
+                        'type': 'table',
+                        'data': table_data,
+                        'class': element.get('class', [])
+                    })
+
+            # Divs avec classe spécifique (souvent utilisés pour du contenu)
+            elif element.name == 'div':
+                # Seulement si le div contient directement du texte (pas d'autres éléments structurels)
+                if element.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol']) is None:
+                    text = element.get_text(strip=True)
+                    if text and len(text) > 20:  # Éviter les petits divs de style
+                        content_blocks.append({
+                            'type': 'div',
+                            'text': text,
+                            'class': element.get('class', []),
+                            'id': element.get('id', '')
+                        })
+
+        return content_blocks
+
     def scrape_page(self, url: str) -> Dict:
         """Scrape une page web complète"""
         if url in self.visited_urls:
@@ -366,64 +469,39 @@ class WebScraper:
             with open(html_path, 'w', encoding='utf-8') as f:
                 f.write(response.text)
 
+            # Créer un nom de page pour préfixer les fichiers
+            page_name = self.sanitize_filename(urlparse(url).path.replace('/', '_') or 'index')
+            page_name = page_name.replace('.html', '').replace('.php', '')
+
             # Extraire le contenu
             text_content = self.extract_text_content(soup)
-            media_content = self.extract_media(soup, url)
+            media_content = self.extract_media(soup, url, page_prefix=page_name)
+
+            # Créer le contenu séquentiel (pour Gemini/reconstruction)
+            sequential_content = self.extract_sequential_content(soup, media_content)
 
             # Sauvegarder le contenu structuré de cette page dans un fichier JSON séparé
-            content_filename = self.sanitize_filename(f"{urlparse(url).path.replace('/', '_') or 'index'}_content.json")
+            content_filename = self.sanitize_filename(f"{page_name}_content.json")
             content_path = self.output_dir / 'content' / content_filename
 
             page_content_structure = {
                 'url': url,
+                'page_name': page_name,
                 'timestamp': datetime.now().isoformat(),
                 'title': text_content['title'],
                 'meta_description': text_content['meta_description'],
-                'sections': []
+                'content_blocks': sequential_content,
+                'metadata': {
+                    'total_headings': len([b for b in sequential_content if b['type'] == 'heading']),
+                    'total_paragraphs': len([b for b in sequential_content if b['type'] == 'paragraph']),
+                    'total_images': len([b for b in sequential_content if b['type'] == 'image']),
+                    'total_lists': len([b for b in sequential_content if b['type'] == 'list']),
+                    'total_tables': len([b for b in sequential_content if b['type'] == 'table']),
+                    'total_blocks': len(sequential_content)
+                },
+                'forms': text_content['forms'],
+                'all_links': text_content['links']
             }
-
-            # Structurer le contenu en sections
-            current_section = None
-            for level in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
-                for heading in text_content['headings'][level]:
-                    section = {
-                        'heading_level': level,
-                        'heading': heading['text'],
-                        'heading_id': heading['id'],
-                        'heading_class': heading['class'],
-                        'paragraphs': [],
-                        'lists': [],
-                        'images': [],
-                        'links': []
-                    }
-                    page_content_structure['sections'].append(section)
-
-            # Ajouter les paragraphes, listes, etc. à la structure
-            if not page_content_structure['sections']:
-                # Si pas de sections avec titres, créer une section par défaut
-                page_content_structure['sections'].append({
-                    'heading_level': 'none',
-                    'heading': 'Contenu principal',
-                    'heading_id': '',
-                    'heading_class': [],
-                    'paragraphs': text_content['paragraphs'],
-                    'lists': text_content['lists'],
-                    'images': [{'url': img.get('url', ''), 'alt': img.get('alt', ''), 'title': img.get('title', '')}
-                               for img in media_content['images'] if img.get('status') == 'success'],
-                    'links': text_content['links']
-                })
-            else:
-                # Distribuer le contenu dans les sections (simplification: tout dans la première section)
-                if page_content_structure['sections']:
-                    page_content_structure['sections'][0]['paragraphs'] = text_content['paragraphs']
-                    page_content_structure['sections'][0]['lists'] = text_content['lists']
-                    page_content_structure['sections'][0]['images'] = [{'url': img.get('url', ''), 'alt': img.get('alt', ''), 'title': img.get('title', '')}
-                                                                        for img in media_content['images'] if img.get('status') == 'success']
-                    page_content_structure['sections'][0]['links'] = text_content['links']
-
-            # Ajouter les tableaux et formulaires globalement
-            page_content_structure['tables'] = text_content['tables']
-            page_content_structure['forms'] = text_content['forms']
 
             # Sauvegarder le contenu structuré
             with open(content_path, 'w', encoding='utf-8') as f:

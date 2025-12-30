@@ -24,9 +24,12 @@ Ce programme permet de scraper un site web pour récupérer tout son contenu vis
     - Recherche de liens directs vers fichiers audio (.mp3, .wav, .ogg, etc.)
 
 - **Organisation des données**:
+  - **Images préfixées avec le nom de la page** (ex: `index_logo.webp`, `contact_banner.webp`)
   - Médias organisés par type (images, vidéos, audio)
   - HTML brut sauvegardé
-  - **Fichier JSON structuré par page** avec sections, paragraphes et hiérarchie
+  - **Fichier JSON séquentiel par page** - ordre exact des éléments préservé
+  - Format optimisé pour reconstruction avec LLM (Gemini, Claude, etc.)
+  - Métadonnées détaillées (compteurs, classes CSS, IDs)
   - Résumé JSON complet avec toutes les données
 
 ## Installation
@@ -101,36 +104,67 @@ scraped_data/
 
 ### Format des fichiers de contenu par page
 
-Chaque page a son propre fichier JSON structuré avec sections et hiérarchie:
+Chaque page a son propre fichier JSON avec **l'ordre séquentiel exact des éléments**.
+Ce format est parfait pour donner à un LLM (comme Gemini) pour reconstruire la page sans perte d'information.
+
+**Caractéristiques:**
+- Images préfixées avec le nom de la page: `index_logo.webp`, `contact_banner.webp`
+- Ordre séquentiel préservé (comme sur la page originale)
+- Métadonnées complètes pour chaque élément
 
 ```json
 {
   "url": "https://example.com/page",
+  "page_name": "index",
   "timestamp": "2025-12-30T...",
   "title": "Titre de la page",
   "meta_description": "Description...",
-  "sections": [
+  "content_blocks": [
     {
-      "heading_level": "h1",
-      "heading": "Titre principal",
-      "heading_id": "main-title",
-      "heading_class": ["title"],
-      "paragraphs": [
-        {"text": "Contenu du paragraphe...", "class": []}
+      "type": "heading",
+      "level": "h1",
+      "text": "Titre principal",
+      "id": "main-title",
+      "class": ["hero-title"]
+    },
+    {
+      "type": "paragraph",
+      "text": "Premier paragraphe de contenu...",
+      "class": ["intro"]
+    },
+    {
+      "type": "image",
+      "src": "https://example.com/logo.png",
+      "local_file": "index_logo.webp",
+      "alt": "Logo de l'entreprise",
+      "title": "Notre logo",
+      "class": ["logo"]
+    },
+    {
+      "type": "list",
+      "list_type": "ul",
+      "items": ["Item 1", "Item 2", "Item 3"],
+      "class": ["features"]
+    },
+    {
+      "type": "table",
+      "data": [
+        ["Header 1", "Header 2"],
+        ["Data 1", "Data 2"]
       ],
-      "lists": [
-        {"type": "ul", "items": ["Item 1", "Item 2"], "class": []}
-      ],
-      "images": [
-        {"url": "https://...", "alt": "Description", "title": "Titre"}
-      ],
-      "links": [
-        {"text": "Lien", "href": "https://...", "title": ""}
-      ]
+      "class": ["pricing-table"]
     }
   ],
-  "tables": [...],
-  "forms": [...]
+  "metadata": {
+    "total_headings": 5,
+    "total_paragraphs": 12,
+    "total_images": 8,
+    "total_lists": 3,
+    "total_tables": 1,
+    "total_blocks": 29
+  },
+  "forms": [...],
+  "all_links": [...]
 }
 ```
 
@@ -204,13 +238,29 @@ python3 scraper.py
 # Dossier de sortie: site_complet
 ```
 
-## Cas d'usage: Récupérer le contenu d'un site existant
+### Reconstruction de page avec Gemini/Claude
+
+Le format JSON séquentiel est parfait pour donner à un LLM et recréer la page:
+
+```
+Prompt pour Gemini/Claude:
+"Voici le contenu d'une page web au format JSON. Peux-tu créer le code HTML/CSS
+correspondant en respectant exactement l'ordre et la structure des éléments ?
+
+[Coller le contenu du fichier index_content.json]
+
+Les images sont disponibles dans le dossier images/ avec les noms indiqués dans
+'local_file'. Crée un design moderne et responsive."
+```
+
+## Cas d'usage
 
 Ce programme est particulièrement utile pour:
-- Migrer un site web vers une nouvelle plateforme
-- Sauvegarder le contenu d'un site
-- Analyser la structure et le contenu d'un site
-- Récupérer des images et médias en masse
+- **Reconstruire un site avec un LLM** : Format optimisé pour Gemini, Claude, ChatGPT
+- **Migrer un site web** vers une nouvelle plateforme
+- **Sauvegarder le contenu** d'un site avant modifications
+- **Analyser la structure** et le contenu d'un site
+- **Récupérer des images et médias** en masse avec nommage organisé
 
 ## Notes importantes
 
