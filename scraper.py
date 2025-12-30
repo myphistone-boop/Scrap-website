@@ -355,19 +355,19 @@ class WebScraper:
 
             page_data = self.scrape_page(current_url)
 
-            if page_data['status'] == 'success':
-                pages_data.append(page_data)
+            # Toujours ajouter les données, même en cas d'erreur
+            pages_data.append(page_data)
 
-                # Si on suit les liens, ajouter les liens internes à la liste
-                if include_links and len(pages_data) < max_pages:
-                    base_domain = urlparse(self.base_url).netloc
-                    for link in page_data['content']['links']:
-                        link_url = link['href']
-                        link_domain = urlparse(link_url).netloc
+            # Si on suit les liens, ajouter les liens internes à la liste
+            if page_data['status'] == 'success' and include_links and len(pages_data) < max_pages:
+                base_domain = urlparse(self.base_url).netloc
+                for link in page_data['content']['links']:
+                    link_url = link['href']
+                    link_domain = urlparse(link_url).netloc
 
-                        # Ajouter seulement les liens du même domaine
-                        if link_domain == base_domain and link_url not in self.visited_urls and link_url not in urls_to_visit:
-                            urls_to_visit.append(link_url)
+                    # Ajouter seulement les liens du même domaine
+                    if link_domain == base_domain and link_url not in self.visited_urls and link_url not in urls_to_visit:
+                        urls_to_visit.append(link_url)
 
         # Créer un résumé
         summary = {
