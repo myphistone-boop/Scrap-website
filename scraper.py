@@ -67,7 +67,7 @@ class WebScraper:
             filename = name[:200-len(ext)] + ext
         return filename
 
-    def download_file(self, url: str, folder: str, custom_name: str = None, page_prefix: str = None) -> Dict:
+    def download_file(self, url: str, folder: str, custom_name: str = None, page_prefix: str = None, page_subfolder: str = None) -> Dict:
         """Télécharge un fichier média"""
         if url in self.downloaded_media:
             return {'status': 'already_downloaded', 'url': url}
@@ -84,10 +84,6 @@ class WebScraper:
                 parsed = urlparse(url)
                 filename = os.path.basename(parsed.path)
 
-                # Ajouter le préfixe de la page si fourni
-                if page_prefix:
-                    filename = f"{page_prefix}_{filename}"
-
                 # Si pas d'extension, essayer de la déterminer depuis le Content-Type
                 if not os.path.splitext(filename)[1]:
                     content_type = response.headers.get('Content-Type', '')
@@ -97,13 +93,20 @@ class WebScraper:
 
             filename = self.sanitize_filename(filename)
 
+            # Créer le chemin avec sous-dossier si spécifié
+            if page_subfolder and folder == 'images':
+                folder_path = self.output_dir / folder / page_subfolder
+                folder_path.mkdir(parents=True, exist_ok=True)
+            else:
+                folder_path = self.output_dir / folder
+
             # Éviter les doublons
             base_name, ext = os.path.splitext(filename)
             counter = 1
-            final_path = self.output_dir / folder / filename
+            final_path = folder_path / filename
             while final_path.exists():
                 filename = f"{base_name}_{counter}{ext}"
-                final_path = self.output_dir / folder / filename
+                final_path = folder_path / filename
                 counter += 1
 
             # Sauvegarder le fichier
@@ -152,10 +155,17 @@ class WebScraper:
 
             self.downloaded_media.add(url)
 
+            # Créer le chemin relatif pour le JSON
+            if page_subfolder and folder == 'images':
+                relative_path = f"{page_subfolder}/{filename}"
+            else:
+                relative_path = filename
+
             return {
                 'status': 'success',
                 'url': url,
                 'filename': filename,
+                'relative_path': relative_path,
                 'path': str(final_path),
                 'size': os.path.getsize(final_path)
             }
@@ -167,7 +177,7 @@ class WebScraper:
                 'error': str(e)
             }
 
-    def extract_media(self, soup: BeautifulSoup, page_url: str, page_prefix: str = None) -> Dict[str, List]:
+    def extract_media(self, soup: BeautifulSoup, page_url: str, page_name: str = None) -> Dict[str, List]:
         """Extrait tous les médias d'une page"""
         media = {
             'images': [],
@@ -181,7 +191,7 @@ class WebScraper:
             if src:
                 abs_url = self.get_absolute_url(src, page_url)
                 if self.is_valid_url(abs_url):
-                    result = self.download_file(abs_url, 'images', page_prefix=page_prefix)
+                    result = self.download_file(abs_url, 'images', page_subfolder=page_name)
                     result['alt'] = img.get('alt', '')
                     result['title'] = img.get('title', '')
                     media['images'].append(result)
@@ -423,7 +433,7 @@ class WebScraper:
                     if img_info.get('filename'):
                         image_block = {
                             'type': 'image',
-                            'file': img_info.get('filename', ''),
+                            'file': img_info.get('relative_path', img_info.get('filename', '')),
                             'description': alt_text or title_text or ''
                         }
                         content_blocks.append(image_block)
@@ -491,7 +501,7 @@ class WebScraper:
 
             # Extraire le contenu
             text_content = self.extract_text_content(soup)
-            media_content = self.extract_media(soup, url, page_prefix=page_name)
+            media_content = self.extract_media(soup, url, page_name=page_name)
 
             # Créer le contenu séquentiel (pour Gemini/reconstruction)
             sequential_content = self.extract_sequential_content(soup, media_content)

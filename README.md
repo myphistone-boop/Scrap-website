@@ -24,12 +24,11 @@ Ce programme permet de scraper un site web pour récupérer tout son contenu vis
     - Recherche de liens directs vers fichiers audio (.mp3, .wav, .ogg, etc.)
 
 - **Organisation des données**:
-  - **Images préfixées avec le nom de la page** (ex: `index_logo.webp`, `contact_banner.webp`)
+  - **Images organisées dans des sous-dossiers par page** (`images/index/`, `images/contact/`, etc.)
   - Médias organisés par type (images, vidéos, audio)
   - HTML brut sauvegardé
   - **Fichier JSON séquentiel par page** - ordre exact des éléments préservé
   - Format optimisé pour reconstruction avec LLM (Gemini, Claude, etc.)
-  - Métadonnées détaillées (compteurs, classes CSS, IDs)
   - Résumé JSON complet avec toutes les données
 
 ## Installation
@@ -91,13 +90,24 @@ Après le scraping, vous trouverez la structure suivante:
 
 ```
 scraped_data/
-├── images/              # Toutes les images téléchargées (en WebP par défaut)
+├── images/              # Images organisées par page
+│   ├── index/          # Images de la page d'accueil
+│   │   ├── logo.webp
+│   │   ├── banner.webp
+│   │   └── ...
+│   ├── contact/        # Images de la page contact
+│   │   ├── photo1.webp
+│   │   └── ...
+│   └── produits/       # Images de la page produits
+│       ├── item1.webp
+│       └── ...
 ├── videos/              # Toutes les vidéos téléchargées
 ├── audio/               # Tous les fichiers audio téléchargés
 ├── raw_html/            # Pages HTML brutes
 ├── content/             # Contenu extrait
 │   ├── index_content.json       # Contenu structuré de la page d'accueil
-│   ├── page1_content.json       # Contenu structuré de page1
+│   ├── contact_content.json     # Contenu structuré de la page contact
+│   ├── produits_content.json    # Contenu structuré de la page produits
 │   └── ...                       # Un fichier JSON par page scrapée
 └── scraping_summary.json        # Résumé complet avec tout
 ```
@@ -108,7 +118,7 @@ Chaque page a son propre fichier JSON **simplifié et épuré** avec uniquement 
 Ce format est parfait pour donner à un LLM (comme Gemini) pour reconstruire la page.
 
 **Caractéristiques:**
-- Images préfixées avec le nom de la page: `index_logo.webp`, `contact_banner.webp`
+- **Images organisées par page** dans des sous-dossiers: `index/logo.webp`, `contact/banner.webp`
 - Ordre séquentiel préservé (comme sur la page originale)
 - **Aucune métadonnée technique** (pas de classes, IDs, types, etc.)
 - **Uniquement le contenu visible** par les visiteurs
@@ -131,7 +141,7 @@ Ce format est parfait pour donner à un LLM (comme Gemini) pour reconstruire la 
     },
     {
       "type": "image",
-      "file": "index_logo.webp",
+      "file": "index/logo.webp",
       "description": "Logo de l'entreprise"
     },
     {
@@ -251,7 +261,8 @@ le contenu visible (titres, paragraphes, images, listes) dans l'ordre exact
 d'apparition sur la page.
 
 Peux-tu créer le code HTML/CSS correspondant en respectant cet ordre ?
-Les images sont dans le dossier images/ avec les noms indiqués dans 'file'.
+Les images sont organisées dans le dossier images/ avec la structure indiquée dans 'file'
+(ex: images/index/logo.webp pour la page d'accueil).
 Crée un design moderne, professionnel et responsive.
 
 [Coller le contenu du fichier index_content.json]
